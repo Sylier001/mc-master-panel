@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -10,56 +11,61 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
-// Statik HTML/CSS/JS dosyalarını dışarıya aç
-app.use(express.static('public'));
+// Statik dosyaları (index.html) sun
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Bağlı bot durumlarını hafızada tut
-const activeBots = new Map();
+// Bağlı tüm botların durumunu hafızada tut
+const botRegistry = {};
 
 io.on('connection', (socket) => {
-  console.log(`[Bağlantı] Yeni istemci/worker bağlandı: ${socket.id}`);
+  console.log(`[Socket] Yeni bir bağlantı sağlandı: ${socket.id}`);
 
-  // Bot ilk defa bağlandığında kaydet
+  // Mevcut bot durumlarını yeni bağlanan web arayüzüne gönder
+  socket.emit('init_bots', botRegistry);
+
+  // Worker bot kaydı veya durum güncellemesi
   socket.on('register_bot', (data) => {
-    activeBots.set(data.username, {
-      socketId: socket.id,
+    botRegistry[data.username] = {
       username: data.username,
-      online: data.online,
-      health: data.health || 20,
-      food: data.food || 20
-    });
-    io.emit('bot_list_update', Array.from(activeBots.values()));
+      online: data.online || false,
+      status: data.status || 'Bağlanıyor...',
+      health: data.health || 0,
+      food: data.food || 0,
+      socketId: socket.id
+    };
+    io.emit('bot_updated', botRegistry[data.username]);
   });
 
-  // Bot can/durum güncellediğinde
   socket.on('bot_status_update', (data) => {
-    if (activeBots.has(data.username)) {
-      const bot = activeBots.get(data.username);
-      bot.online = data.online !== undefined ? data.online : bot.online;
-      bot.health = data.health !== undefined ? data.health : bot.health;
-      bot.food = data.food !== undefined ? data.food : bot.food;
-      activeBots.set(data.username, bot);
-      io.emit('bot_list_update', Array.from(activeBots.values()));
+    if (botRegistry[data.username]) {
+      botRegistry[data.username] = {
+        ...botRegistry[data.username],
+        ...data
+      };
+      io.emit('bot_updated', botRegistry[data.username]);
     }
   });
 
-  // Web panelinden gelen komutları ilgili Worker'a yönlendir
+  // Web Arayüzünden gelen Komut Gönderme
   socket.on('send_command', ({ botId, command }) => {
     io.emit('execute_command', { botId, command });
   });
 
-  socket.on('disconnect', () => {
-    // Kopan socket'e ait botları offline çek
-    for (let [username, bot] of activeBots.entries()) {
-      if (bot.socketId === socket.id) {
-        bot.online = false;
-        activeBots.set(username, bot);
-      }
+  // Web Arayüzünden gelen Aç / Kapat (Start / Stop) İsteği
+  socket.on('control_bot_request', ({ botId, action }) => {
+    if (botRegistry[botId]) {
+      botRegistry[botId].status = action === 'start' ? 'Başlatılıyor...' : 'Kapatıldı';
+      botRegistry[botId].online = action === 'start';
+      io.emit('bot_updated', botRegistry[botId]);
     }
-    io.emit('bot_list_update', Array.from(activeBots.values()));
+    io.emit('control_bot', { botId, action });
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`[Socket] Bağlantı koptu: ${socket.id}`);
   });
 });
 
 server.listen(PORT, () => {
-  console.log(`[Master Panel] ${PORT} portunda dinleniyor.`);
+  console.log(`[Master Panel] Server ${PORT} portunda aktif.`);
 });
