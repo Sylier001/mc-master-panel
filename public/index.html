@@ -6,74 +6,134 @@
   <title>MC AFK Bot Master Control</title>
   <script src="/socket.io/socket.io.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1e1e2e; color: #cdd6f4; padding: 20px; }
-    h1 { color: #89b4fa; margin-bottom: 20px; }
-    .control-box { background: #181825; padding: 15px; border-radius: 8px; margin-bottom: 25px; border: 1px solid #313244; }
-    .control-box h3 { margin-bottom: 10px; color: #a6e3a1; }
-    input[type="text"] { padding: 10px; border-radius: 5px; border: 1px solid #45475a; background: #313244; color: #fff; width: 70%; margin-right: 10px; }
-    button { padding: 10px 15px; border-radius: 5px; border: none; background: #89b4fa; color: #11111b; font-weight: bold; cursor: pointer; }
-    button:hover { background: #b4befe; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 15px; }
-    .card { background: #313244; padding: 15px; border-radius: 8px; border-left: 5px solid #a6e3a1; transition: transform 0.2s; }
-    .card.offline { border-left-color: #f38ba8; opacity: 0.7; }
-    .card h3 { margin-bottom: 8px; color: #f5e0dc; }
-    .card p { font-size: 14px; margin-bottom: 5px; }
-    .card input { width: 100%; margin-top: 10px; margin-bottom: 5px; }
-    .card button { width: 100%; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #0f172a; color: #f8fafc; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { margin-bottom: 20px; color: #38bdf8; display: flex; align-items: center; gap: 10px; }
+    
+    .card { background: #1e293b; border-radius: 10px; padding: 20px; margin-bottom: 20px; border: 1px solid #334155; }
+    .card h2 { font-size: 1.1rem; margin-bottom: 10px; color: #94a3b8; }
+    
+    .input-group { display: flex; gap: 10px; }
+    input[type="text"] { flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 1rem; }
+    button { padding: 12px 20px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-success { background: #22c55e; color: white; }
+    .btn-success:hover { background: #16a34a; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-danger:hover { background: #dc2626; }
+    
+    .bot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
+    .bot-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 15px; position: relative; }
+    .bot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .bot-name { font-weight: bold; font-size: 1.1rem; }
+    .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+    .online { background: #15803d; color: #dcfce7; }
+    .offline { background: #991b1b; color: #fee2e2; }
+    
+    .bot-stats { font-size: 0.9rem; color: #cbd5e1; margin-bottom: 12px; display: flex; gap: 15px; }
+    .bot-actions { display: flex; gap: 5px; margin-top: 10px; }
+    .bot-actions input { font-size: 0.85rem; padding: 6px; }
+    .bot-actions button { padding: 6px 12px; font-size: 0.85rem; }
+    .controls { display: flex; gap: 5px; margin-bottom: 10px; }
   </style>
 </head>
 <body>
 
+<div class="container">
   <h1>🎮 Minecraft Bot Master Control</h1>
 
-  <div class="control-box">
-    <h3>Toplu Komut Gönder (Tüm Botlar)</h3>
-    <input type="text" id="globalCmd" placeholder="Örn: /login 123456 veya /afk">
-    <button onclick="sendGlobalCommand()">Tümüne Gönder</button>
+  <!-- TOPLU KOMUT SİSTEMİ -->
+  <div class="card">
+    <h2>Toplu Komut Gönder (Tüm Botlar)</h2>
+    <div class="input-group">
+      <input type="text" id="globalCommand" placeholder="Örn: /login 21hg21 veya /afk">
+      <button class="btn-primary" onclick="sendGlobalCommand()">Tümüne Gönder</button>
+    </div>
   </div>
 
+  <!-- BOT LİSTESİ -->
   <h2>Botlar (<span id="botCount">0</span>)</h2>
-  <div class="grid" id="botGrid"></div>
+  <br>
+  <div class="bot-grid" id="botGrid">
+    <!-- Bot Kartları Buraya Dinamik Dökülecek -->
+  </div>
+</div>
 
-  <script>
-    const socket = io();
+<script>
+  const socket = io();
+  const botGrid = document.getElementById('botGrid');
+  const botCount = document.getElementById('botCount');
+  let bots = {};
 
-    socket.on('bot_list_update', (bots) => {
-      document.getElementById('botCount').innerText = bots.length;
-      const grid = document.getElementById('botGrid');
-      grid.innerHTML = '';
+  socket.on('init_bots', (data) => {
+    bots = data;
+    renderBots();
+  });
 
-      bots.forEach(bot => {
-        const card = document.createElement('div');
-        card.className = `card ${bot.online ? '' : 'offline'}`;
-        card.innerHTML = `
-          <h3>${bot.username}</h3>
-          <p>Durum: <strong>${bot.online ? '🟢 Oyunda' : '🔴 Çevrimdışı'}</strong></p>
-          <p>Can: ${bot.health} / 20</p>
-          <p>Açlık: ${bot.food} / 20</p>
-          <input type="text" id="cmd-${bot.username}" placeholder="Özel komut...">
-          <button onclick="sendSingleCommand('${bot.username}')">Gönder</button>
-        `;
-        grid.appendChild(card);
-      });
+  socket.on('bot_updated', (botData) => {
+    bots[botData.username] = botData;
+    renderBots();
+  });
+
+  function renderBots() {
+    botGrid.innerHTML = '';
+    const keys = Object.keys(bots);
+    botCount.innerText = keys.length;
+
+    keys.forEach(username => {
+      const bot = bots[username];
+      const card = document.createElement('div');
+      card.className = 'bot-card';
+
+      card.innerHTML = `
+        <div class="bot-header">
+          <span class="bot-name">${bot.username}</span>
+          <span class="status-badge ${bot.online ? 'online' : 'offline'}">
+            ${bot.status || (bot.online ? 'Oyunda' : 'Çevrimdışı')}
+          </span>
+        </div>
+        
+        <div class="bot-stats">
+          <span>❤️ Can: ${bot.health || 0}</span>
+          <span>🍖 Açlık: ${bot.food || 0}</span>
+        </div>
+
+        <div class="controls">
+          <button class="btn-success" onclick="controlBot('${bot.username}', 'start')">Aç / Bağlan</button>
+          <button class="btn-danger" onclick="controlBot('${bot.username}', 'stop')">Kapat</button>
+        </div>
+
+        <div class="bot-actions">
+          <input type="text" id="cmd-${bot.username}" placeholder="Özel Komut">
+          <button class="btn-primary" onclick="sendPrivateCommand('${bot.username}')">Gönder</button>
+        </div>
+      `;
+      botGrid.appendChild(card);
     });
+  }
 
-    function sendSingleCommand(username) {
-      const input = document.getElementById(`cmd-${username}`);
-      if (input.value) {
-        socket.emit('send_command', { botId: username, command: input.value });
-        input.value = '';
-      }
+  function sendGlobalCommand() {
+    const input = document.getElementById('globalCommand');
+    if (input.value.trim() !== '') {
+      socket.emit('send_command', { botId: 'ALL', command: input.value });
+      input.value = '';
     }
+  }
 
-    function sendGlobalCommand() {
-      const input = document.getElementById('globalCmd');
-      if (input.value) {
-        socket.emit('send_command', { botId: 'ALL', command: input.value });
-        input.value = '';
-      }
+  function sendPrivateCommand(username) {
+    const input = document.getElementById(`cmd-${username}`);
+    if (input.value.trim() !== '') {
+      socket.emit('send_command', { botId: username, command: input.value });
+      input.value = '';
     }
-  </script>
+  }
+
+  function controlBot(username, action) {
+    socket.emit('control_bot_request', { botId: username, action: action });
+  }
+</script>
+
 </body>
 </html>
