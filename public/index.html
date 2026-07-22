@@ -9,34 +9,33 @@
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     body { background-color: #0f172a; color: #f8fafc; padding: 20px; }
     .container { max-width: 1200px; margin: 0 auto; }
-    h1 { margin-bottom: 20px; color: #38bdf8; display: flex; align-items: center; gap: 10px; }
+    h1 { margin-bottom: 20px; color: #38bdf8; }
     
     .card { background: #1e293b; border-radius: 10px; padding: 20px; margin-bottom: 20px; border: 1px solid #334155; }
-    .card h2 { font-size: 1.1rem; margin-bottom: 10px; color: #94a3b8; }
-    
     .input-group { display: flex; gap: 10px; }
-    input[type="text"] { flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 1rem; }
-    button { padding: 12px 20px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+    input[type="text"] { flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: #fff; }
+    button { padding: 10px 16px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
     .btn-primary { background: #3b82f6; color: white; }
-    .btn-primary:hover { background: #2563eb; }
     .btn-success { background: #22c55e; color: white; }
-    .btn-success:hover { background: #16a34a; }
     .btn-danger { background: #ef4444; color: white; }
-    .btn-danger:hover { background: #dc2626; }
     
     .bot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
-    .bot-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 15px; position: relative; }
+    .bot-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 15px; cursor: pointer; transition: 0.2s; }
+    .bot-card:hover { border-color: #38bdf8; }
     .bot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-    .bot-name { font-weight: bold; font-size: 1.1rem; }
+    .bot-name { font-weight: bold; font-size: 1.1rem; color: #38bdf8; text-decoration: underline; }
     .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
     .online { background: #15803d; color: #dcfce7; }
     .offline { background: #991b1b; color: #fee2e2; }
-    
     .bot-stats { font-size: 0.9rem; color: #cbd5e1; margin-bottom: 12px; display: flex; gap: 15px; }
-    .bot-actions { display: flex; gap: 5px; margin-top: 10px; }
-    .bot-actions input { font-size: 0.85rem; padding: 6px; }
-    .bot-actions button { padding: 6px 12px; font-size: 0.85rem; }
-    .controls { display: flex; gap: 5px; margin-bottom: 10px; }
+    .controls { display: flex; gap: 5px; }
+
+    /* MODAL (BOT DETAY PENCERESİ) */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; }
+    .modal-content { background: #1e293b; width: 600px; max-width: 90%; border-radius: 10px; padding: 20px; border: 1px solid #475569; position: relative; }
+    .close-btn { position: absolute; top: 15px; right: 20px; font-size: 1.5rem; cursor: pointer; color: #94a3b8; }
+    .chat-box { background: #0f172a; height: 300px; border-radius: 6px; padding: 10px; overflow-y: auto; margin: 15px 0; font-family: monospace; font-size: 0.9rem; border: 1px solid #334155; }
+    .chat-line { margin-bottom: 4px; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -44,28 +43,38 @@
 <div class="container">
   <h1>🎮 Minecraft Bot Master Control</h1>
 
-  <!-- TOPLU KOMUT SİSTEMİ -->
   <div class="card">
     <h2>Toplu Komut Gönder (Tüm Botlar)</h2>
     <div class="input-group">
-      <input type="text" id="globalCommand" placeholder="Örn: /login 21hg21 veya /afk">
+      <input type="text" id="globalCommand" placeholder="Örn: /afk">
       <button class="btn-primary" onclick="sendGlobalCommand()">Tümüne Gönder</button>
     </div>
   </div>
 
-  <!-- BOT LİSTESİ -->
   <h2>Botlar (<span id="botCount">0</span>)</h2>
   <br>
-  <div class="bot-grid" id="botGrid">
-    <!-- Bot Kartları Buraya Dinamik Dökülecek -->
+  <div class="bot-grid" id="botGrid"></div>
+</div>
+
+<!-- OYUNCU DETAY VE CANLI CHAT MODAL -->
+<div class="modal" id="botModal">
+  <div class="modal-content">
+    <span class="close-btn" onclick="closeModal()">&times;</span>
+    <h2 id="modalBotTitle">Bot Detayı</h2>
+    
+    <div class="chat-box" id="modalChatBox"></div>
+
+    <div class="input-group">
+      <input type="text" id="modalCommandInput" placeholder="Bu bota komut/mesaj gönder...">
+      <button class="btn-primary" onclick="sendModalCommand()">Gönder</button>
+    </div>
   </div>
 </div>
 
 <script>
   const socket = io();
-  const botGrid = document.getElementById('botGrid');
-  const botCount = document.getElementById('botCount');
   let bots = {};
+  let currentActiveBot = null;
 
   socket.on('init_bots', (data) => {
     bots = data;
@@ -77,10 +86,20 @@
     renderBots();
   });
 
+  socket.on('new_chat_message', ({ username, message }) => {
+    if (!bots[username].logs) bots[username].logs = [];
+    bots[username].logs.push(message);
+
+    if (currentActiveBot === username) {
+      appendChatMessage(message);
+    }
+  });
+
   function renderBots() {
+    const botGrid = document.getElementById('botGrid');
     botGrid.innerHTML = '';
     const keys = Object.keys(bots);
-    botCount.innerText = keys.length;
+    document.getElementById('botCount').innerText = keys.length;
 
     keys.forEach(username => {
       const bot = bots[username];
@@ -89,29 +108,48 @@
 
       card.innerHTML = `
         <div class="bot-header">
-          <span class="bot-name">${bot.username}</span>
+          <span class="bot-name" onclick="openBotModal('${bot.username}')">${bot.username} 💬</span>
           <span class="status-badge ${bot.online ? 'online' : 'offline'}">
             ${bot.status || (bot.online ? 'Oyunda' : 'Çevrimdışı')}
           </span>
         </div>
-        
         <div class="bot-stats">
-          <span>❤️ Can: ${bot.health || 0}</span>
-          <span>🍖 Açlık: ${bot.food || 0}</span>
+          <span>❤️ ${bot.health || 0}</span>
+          <span>🍖 ${bot.food || 0}</span>
         </div>
-
-        <div class="controls">
-          <button class="btn-success" onclick="controlBot('${bot.username}', 'start')">Aç / Bağlan</button>
+        <div class="controls" onclick="event.stopPropagation()">
+          <button class="btn-success" onclick="controlBot('${bot.username}', 'start')">Aç</button>
           <button class="btn-danger" onclick="controlBot('${bot.username}', 'stop')">Kapat</button>
-        </div>
-
-        <div class="bot-actions">
-          <input type="text" id="cmd-${bot.username}" placeholder="Özel Komut">
-          <button class="btn-primary" onclick="sendPrivateCommand('${bot.username}')">Gönder</button>
         </div>
       `;
       botGrid.appendChild(card);
     });
+  }
+
+  function openBotModal(username) {
+    currentActiveBot = username;
+    document.getElementById('modalBotTitle').innerText = `💬 Bot: ${username}`;
+    const chatBox = document.getElementById('modalChatBox');
+    chatBox.innerHTML = '';
+
+    const logs = bots[username]?.logs || [];
+    logs.forEach(msg => appendChatMessage(msg));
+
+    document.getElementById('botModal').style.display = 'flex';
+  }
+
+  function closeModal() {
+    document.getElementById('botModal').style.display = 'none';
+    currentActiveBot = null;
+  }
+
+  function appendChatMessage(msg) {
+    const chatBox = document.getElementById('modalChatBox');
+    const div = document.createElement('div');
+    div.className = 'chat-line';
+    div.innerText = msg;
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
   }
 
   function sendGlobalCommand() {
@@ -122,10 +160,10 @@
     }
   }
 
-  function sendPrivateCommand(username) {
-    const input = document.getElementById(`cmd-${username}`);
-    if (input.value.trim() !== '') {
-      socket.emit('send_command', { botId: username, command: input.value });
+  function sendModalCommand() {
+    const input = document.getElementById('modalCommandInput');
+    if (input.value.trim() !== '' && currentActiveBot) {
+      socket.emit('send_command', { botId: currentActiveBot, command: input.value });
       input.value = '';
     }
   }
